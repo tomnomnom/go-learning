@@ -1,0 +1,3 @@
+# Go learning
+
+There's probably nothing of interest here.
