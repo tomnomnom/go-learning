@@ -1,9 +1,10 @@
 package main
 
 import (
-  "syscall"
   "fmt"
   "log"
+  "syscall"
+  "unsafe"
 )
 
 func main() {
@@ -14,19 +15,43 @@ func main() {
   defer syscall.Close(fd)
 
   wd, err := syscall.InotifyAddWatch(fd, "test1.log", syscall.IN_ALL_EVENTS)
+  _, err = syscall.InotifyAddWatch(fd, "../test2.log", syscall.IN_ALL_EVENTS)
+  //_, err = syscall.InotifyAddWatch(fd, ".", syscall.IN_ALL_EVENTS)
   if err != nil {
     log.Fatal(err)
   }
   defer syscall.InotifyRmWatch(fd, uint32(wd))
 
-  event := make([]byte, syscall.SizeofInotifyEvent)
+  fmt.Printf("WD is %d\n", wd)
+
   for {
-    _, err := syscall.Read(fd, event)
+    // Room for at least 128 events
+    buffer := make([]byte, syscall.SizeofInotifyEvent*128)
+    bytesRead, err := syscall.Read(fd, buffer)
     if err != nil {
       log.Fatal(err)
     }
-    fmt.Printf("%#v\n", event)
-    //fmt.Printf("%#V\n", syscall.IN_ALL_EVENTS)
+
+    if bytesRead < syscall.SizeofInotifyEvent {
+      // No point trying if we don't have at least one event
+      continue
+    }
+
+    fmt.Printf("Size of InotifyEvent is %s\n", syscall.SizeofInotifyEvent)
+    fmt.Printf("Bytes read: %d\n", bytesRead)
+
+    offset := 0
+    for offset < bytesRead-syscall.SizeofInotifyEvent {
+      event := (*syscall.InotifyEvent)(unsafe.Pointer(&buffer[offset]))
+      fmt.Printf("%+v\n", event)
+
+      if (event.Mask & syscall.IN_ACCESS) > 0 {
+        fmt.Printf("Saw IN_ACCESS for %+v\n", event)
+      }
+
+      // We need to account for the length of the name
+      offset += syscall.SizeofInotifyEvent + int(event.Len)
+    }
   }
 
 }
